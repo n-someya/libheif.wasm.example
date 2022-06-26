@@ -3,7 +3,7 @@ import type { NextPage } from 'next'
 import Head from 'next/head'
 import Image from 'next/image'
 import Script from "next/script";
-
+import { HeifImage, HeifDecoder } from "../lib/heifimage";
 
 
 const Home: NextPage = () => {
@@ -17,40 +17,25 @@ const Home: NextPage = () => {
       if (!fr.result) return
       if (fr.result instanceof ArrayBuffer) {
         const libheif = await (window as any).createLibheif()
-        console.log(libheif)
-        const decoder = libheif.heif_context_alloc();
-        if (!decoder) {
-            console.log("Could not create HEIF context");
-            return
+        const decoder = new HeifDecoder(libheif)
+        const img_datas = decoder.decode(fr.result)
+        img_datas[0]._ensureImage()
+        console.log(img_datas[0].img)
+        console.log(img_datas[0].data)
+        const canvas = document.getElementById("canvas") as HTMLCanvasElement;
+        debugger
+        canvas.width = img_datas[0].img.width;
+			  canvas.height = img_datas[0].img.height;
+			  const ctx = canvas.getContext("2d");
+        const image_data = ctx!.createImageData(canvas.width, canvas.height);
+        var image_data_data = image_data.data;
+        // Start with a white image.
+        for (var i=0; i<canvas.width*canvas.height; i++) {
+            image_data_data[i*4+3] = 255;
         }
-        var error = libheif.heif_context_read_from_memory(decoder, fr.result);
-        if (error.code !== libheif.heif_error_code.heif_error_Ok) {
-            debugger
-            console.log("Could not parse HEIF file", error);
-            return
-        }
-
-        var ids = libheif.heif_js_context_get_list_of_top_level_image_IDs(decoder);
-        if (!ids || ids.code) {
-            console.log("Error loading image ids", ids);
-            return;
-        }
-        else if (!ids.length) {
-            console.log("No images found");
-            return ;
-        }
-
-        var result = [];
-        for (var i = 0; i < ids.length; i++) {
-            var handle = libheif.heif_js_context_get_image_handle(decoder, ids[i]);
-            if (!handle || handle.code) {
-                console.log("Could not get image data for id", ids[i], handle);
-                continue;
-            }
-
-            result.push(handle);
-        }
-        console.log(result)
+        img_datas[0].display(image_data, (img: ImageData) => {
+          ctx!.putImageData(img, 0, 0);
+        })
       }
   }
    fr.readAsArrayBuffer(event.target.files[0])
@@ -76,6 +61,9 @@ const Home: NextPage = () => {
           name="myImage"
           onChange={doConvert}
       />
+      <div id="container" >
+        <canvas id="canvas"></canvas>
+      </div>
       {selectedImage && (
         <div>
         <img alt="not fount" width={"250px"} src={URL.createObjectURL(selectedImage)} />
