@@ -1,44 +1,59 @@
-import { ChangeEvent, useState } from "react";
+import { ChangeEvent, useState, useEffect } from "react";
 import type { NextPage } from 'next'
 import Head from 'next/head'
 import Image from 'next/image'
 import Script from "next/script";
-import { HeifImage, HeifDecoder } from "../lib/heifimage";
+import { HEIFModule } from './wasm_heif'
 
 
 const Home: NextPage = () => {
   const [selectedImage, setSelectedImage]  = useState<File |null>(null);
+
   const doConvert = async (event: ChangeEvent<HTMLInputElement>) => {
+
     if (!event.target.files) return;
+
     console.log(event.target.files[0]);
     setSelectedImage(event.target.files[0]);
     const fr = new FileReader()
+
     fr.onload = async (e) => {
       if (!fr.result) return
       if (fr.result instanceof ArrayBuffer) {
-        const libheif = await (window as any).createLibheif()
-        const decoder = new HeifDecoder(libheif)
-        const img_datas = decoder.decode(fr.result)
-        img_datas[0]._ensureImage()
-        console.log(img_datas[0].img)
-        console.log(img_datas[0].data)
-        const canvas = document.getElementById("canvas") as HTMLCanvasElement;
+
+        const heifModule = await (window as any).wasm_heif() as HEIFModule
+        console.log("start wasm heif", heifModule)
+        const alpha = false; // RGBA somehow not yet working ¯\_(ツ)_/¯
+        console.log(fr.result.byteLength)
+        const buffer = new Uint8Array(fr.result as ArrayBuffer)
+        console.log(buffer.length)
+        const result = heifModule.decode(buffer, buffer.length, alpha); // decode image data and return a new Uint8Array
+        if ( !(result instanceof Uint8Array)) {
+          console.log("ERR: ", result)
+          return
+        }
+
         debugger
-        canvas.width = img_datas[0].img.width;
-			  canvas.height = img_datas[0].img.height;
+        const dimensions = heifModule.dimensions()
+        const canvas = document.getElementById("canvas") as HTMLCanvasElement;
+        canvas.width = dimensions.width
+			  canvas.height = dimensions.height
+        console.log("get dimensions", canvas.height, canvas.width)
 			  const ctx = canvas.getContext("2d");
         const image_data = ctx!.createImageData(canvas.width, canvas.height);
-        var image_data_data = image_data.data;
         // Start with a white image.
         for (var i=0; i<canvas.width*canvas.height; i++) {
-            image_data_data[i*4+3] = 255;
+          image_data.data[i*4] = result[i*3]
+          image_data.data[i*4+1] = result[i*3+1]
+          image_data.data[i*4+2] = result[i*3+2]
+          image_data.data[i*4+3] = 255
         }
-        img_datas[0].display(image_data, (img: ImageData) => {
-          ctx!.putImageData(img, 0, 0);
-        })
+        // imgArray.set(alphaArray, canvas.height*canvas.width*3)
+        ctx!.putImageData(image_data, 0, 0);
+        heifModule.free(); // clean up memory after encoding is done
       }
-  }
-   fr.readAsArrayBuffer(event.target.files[0])
+    }
+    fr.readAsArrayBuffer(event.target.files[0])
   }
   return (
     <div className="flex min-h-screen flex-col items-center justify-center py-2">
@@ -46,7 +61,8 @@ const Home: NextPage = () => {
         <title>Create Next App</title>
         <link rel="icon" href="/favicon.ico" />
       </Head>
-      <Script src="/libheif.js" strategy='beforeInteractive'/>
+      {/* <Script src="/libheif.js" strategy='beforeInteractive'/> */}
+      <Script src="/wasm_heif.js" strategy='beforeInteractive'/>
 
       <main className="flex w-full flex-1 flex-col items-center justify-center px-20 text-center">
         <h1 className="text-6xl font-bold">
